@@ -1,0 +1,288 @@
+{
+  "meta": {
+    "seed": 0,
+    "alpha": 0.05,
+    "periods_per_year": 252,
+    "quick": false,
+    "python": "3.14.6",
+    "numpy": "2.4.3",
+    "config": {
+      "N": 1000,
+      "T": 1000,
+      "M_cal": 2000,
+      "M_rc": 400,
+      "n_boot": 500,
+      "n_boot_case": 5000,
+      "M_pow": 1000,
+      "n_true": 25,
+      "T_search": 756
+    },
+    "avg_block": 20,
+    "fasts": [
+      3,
+      6,
+      9,
+      12,
+      15,
+      18,
+      21,
+      24,
+      27,
+      30,
+      33,
+      36,
+      39,
+      42,
+      45,
+      48
+    ],
+    "slows": [
+      55,
+      60,
+      65,
+      70,
+      75,
+      80,
+      85,
+      90,
+      95,
+      100,
+      105,
+      110,
+      115,
+      120,
+      125,
+      130,
+      135,
+      140,
+      145,
+      150,
+      155,
+      160,
+      165,
+      170,
+      175,
+      180,
+      185,
+      190,
+      195,
+      200,
+      205,
+      210,
+      215,
+      220,
+      225,
+      230,
+      235,
+      240,
+      245,
+      250
+    ]
+  },
+  "null_calibration": {
+    "N": 1000,
+    "T": 1000,
+    "M": 2000,
+    "alpha": 0.05,
+    "fdr": {
+      "naive": 1.0,
+      "dsr": 0.001,
+      "hl_bonferroni": 0.057,
+      "hl_holm": 0.057,
+      "hl_bhy": 0.007,
+      "reality_check": 0.0225
+    },
+    "best_sr_perobs_mean": 0.1027495901934286,
+    "best_sr_annual_mean": 1.6310991777936787,
+    "naive_p_median": 0.0006859886953587968,
+    "dsr_mean": 0.4951778060714673,
+    "sr0_perobs_mean": 0.10298115147307824,
+    "rc_reps": 400
+  },
+  "planted_power": {
+    "N": 1000,
+    "n_true": 25,
+    "T": 1000,
+    "M": 1000,
+    "curve": [
+      {
+        "s_true_perobs": 0.05,
+        "s_true_annual": 0.7937253933193773,
+        "power_dsr": 0.005,
+        "tp_rate_dsr": 0.005,
+        "fp_rate_dsr": 0.0,
+        "naive_truehit": 0.67
+      },
+      {
+        "s_true_perobs": 0.08,
+        "s_true_annual": 1.2699606293110035,
+        "power_dsr": 0.09,
+        "tp_rate_dsr": 0.09,
+        "fp_rate_dsr": 0.0,
+        "naive_truehit": 0.984
+      },
+      {
+        "s_true_perobs": 0.12,
+        "s_true_annual": 1.9049409439665053,
+        "power_dsr": 0.651,
+        "tp_rate_dsr": 0.651,
+        "fp_rate_dsr": 0.0,
+        "naive_truehit": 1.0
+      },
+      {
+        "s_true_perobs": 0.16,
+        "s_true_annual": 2.539921258622007,
+        "power_dsr": 0.998,
+        "tp_rate_dsr": 0.998,
+        "fp_rate_dsr": 0.0,
+        "naive_truehit": 1.0
+      },
+      {
+        "s_true_perobs": 0.2,
+        "s_true_annual": 3.174901573277509,
+        "power_dsr": 1.0,
+        "tp_rate_dsr": 1.0,
+        "fp_rate_dsr": 0.0,
+        "naive_truehit": 1.0
+      }
+    ]
+  },
+  "search_noise": {
+    "K": 640,
+    "T": 755,
+    "n_boot": 5000,
+    "best_params": [
+      45,
+      120
+    ],
+    "best_sr_perobs": 0.05080169286274969,
+    "best_sr_annual": 0.8064518729755239,
+    "naive_p": 0.081373586500322,
+    "psr_vs_zero": 0.9179997909636062,
+    "sr0_perobs": 0.057176437226691426,
+    "sr0_annual": 0.9076478025271266,
+    "dsr": 0.43068130155742035,
+    "n_eff": 1.6469353045884028,
+    "sr0_eff_perobs": 0.019480496062509938,
+    "dsr_eff": 0.8045710779344755,
+    "n_eff_estimators": {
+      "avg_corr": 1.6469353045884028,
+      "participation": 2.4473098053512223,
+      "pca_95": 17.0,
+      "kaiser": 22.0,
+      "cheverud_nyholt": 379.89540975795416
+    },
+    "dsr_by_neff": {
+      "avg_corr": {
+        "n_eff": 1.6469353045884028,
+        "dsr": 0.8045710779344755,
+        "sr0_annual": 0.3092432879854456,
+        "survives": false
+      },
+      "participation": {
+        "n_eff": 2.4473098053512223,
+        "dsr": 0.7848144704251154,
+        "sr0_annual": 0.34951878752852383,
+        "survives": false
+      },
+      "pca_95": {
+        "n_eff": 17.0,
+        "dsr": 0.6329363946007109,
+        "sr0_annual": 0.609645491339171,
+        "survives": false
+      },
+      "kaiser": {
+        "n_eff": 22.0,
+        "dsr": 0.61576240431582,
+        "sr0_annual": 0.635877753201776,
+        "survives": false
+      },
+      "cheverud_nyholt": {
+        "n_eff": 379.89540975795416,
+        "dsr": 0.45524419898644447,
+        "sr0_annual": 0.8715956481931302,
+        "survives": false
+      }
+    },
+    "neff_survive_max": 1.0,
+    "reality_check_p": 0.5700859828034394,
+    "spa_studentized_p": 0.5688862227554489,
+    "haircut_bonferroni": 1.0,
+    "haircut_holm": 1.0,
+    "haircut_bhy": 1.0,
+    "p_adj_holm": 0.9999999999999999,
+    "survives_dsr": false,
+    "survives_rc": false,
+    "mean_pairwise_corr": 0.6065736637618709,
+    "regime": false
+  },
+  "search_signal": {
+    "K": 640,
+    "T": 755,
+    "n_boot": 5000,
+    "best_params": [
+      3,
+      55
+    ],
+    "best_sr_perobs": 0.2466537895130662,
+    "best_sr_annual": 3.915507521899467,
+    "naive_p": 6.119105222524013e-12,
+    "psr_vs_zero": 0.9999999999632778,
+    "sr0_perobs": 0.22129304572995737,
+    "sr0_annual": 3.512918195217067,
+    "dsr": 0.7484779002765856,
+    "n_eff": 1.6058402225735378,
+    "sr0_eff_perobs": 0.015597737260581411,
+    "dsr_eff": 0.9999999994747957,
+    "n_eff_estimators": {
+      "avg_corr": 1.6058402225735378,
+      "participation": 2.357983828569468,
+      "pca_95": 16.0,
+      "kaiser": 21.0,
+      "cheverud_nyholt": 370.00421257876036
+    },
+    "dsr_by_neff": {
+      "avg_corr": {
+        "n_eff": 1.6058402225735378,
+        "dsr": 0.9999999994747957,
+        "sr0_annual": 0.2476064028409457,
+        "survives": true
+      },
+      "participation": {
+        "n_eff": 2.357983828569468,
+        "dsr": 0.9999999966824397,
+        "sr0_annual": 0.42893946045771963,
+        "survives": true
+      },
+      "pca_95": {
+        "n_eff": 16.0,
+        "dsr": 0.999700807532815,
+        "sr0_annual": 1.8521807761357092,
+        "survives": true
+      },
+      "kaiser": {
+        "n_eff": 21.0,
+        "dsr": 0.999260572186723,
+        "sr0_annual": 2.00459692303374,
+        "survives": true
+      },
+      "cheverud_nyholt": {
+        "n_eff": 370.00421257876036,
+        "dsr": 0.8446864945473067,
+        "sr0_annual": 3.3060053578547945,
+        "survives": false
+      }
+    },
+    "neff_survive_max": 144.7538719317174,
+    "reality_check_p": 0.0023995200959808036,
+    "spa_studentized_p": 0.003799240151969606,
+    "haircut_bonferroni": 0.1483386736889728,
+    "haircut_holm": 0.1483386736889728,
+    "haircut_bhy": 0.1982293274496103,
+    "p_adj_holm": 3.916227342415368e-09,
+    "survives_dsr": false,
+    "survives_rc": true,
+    "mean_pairwise_corr": 0.622136548326282,
+    "regime": true
+  }
+}
