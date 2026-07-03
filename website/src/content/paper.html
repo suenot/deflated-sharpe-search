@@ -1,0 +1,1338 @@
+<h1 id="sec:intro">Introduction</h1>
+<p>Every systematic trading study contains a hidden hypothesis-testing
+problem. A researcher who sweeps a parameter grid, keeps the
+configuration with the highest backtest Sharpe ratio, and then reports
+that Sharpe ratio as if it were a single experiment has run a
+multiple-testing procedure while quoting single-test statistics. The
+reported performance is the maximum of many noisy estimates, and the
+maximum of many zero-mean draws is emphatically not zero-mean. <span
+class="citation" data-cites="bailey2014pseudo">Bailey et al.
+(2014)</span> call the resulting literature pseudo-mathematical; <span
+class="citation" data-cites="harveyliuzhu2016">Harvey et al.
+(2016)</span> document the same selection mechanism operating at the
+scale of an entire academic field, with hundreds of published factors
+mined from broadly the same data.</p>
+<p>Several corrections are in wide circulation. <span class="citation"
+data-cites="baileylopezdeprado2012psr">Bailey and López de Prado
+(2012)</span> introduced the Probabilistic Sharpe Ratio (PSR), which
+converts a sample Sharpe ratio into the probability that the true Sharpe
+ratio exceeds a chosen benchmark, accounting for sample length,
+skewness, and kurtosis. <span class="citation"
+data-cites="baileylopezdeprado2014dsr">Bailey and López de Prado
+(2014)</span> extended it to the Deflated Sharpe Ratio (DSR), which sets
+that benchmark to the expected maximum Sharpe ratio a search of <span
+class="math inline">\(N\)</span> independent zero-skill trials would
+produce — so the winner is measured against the best that luck alone
+could have delivered. <span class="citation"
+data-cites="harveyliu2015backtesting">Harvey and Liu (2015)</span>
+approach the same problem through classical multiple-testing adjustments
+(Bonferroni, Holm, Benjamini–Hochberg–Yekutieli), translating adjusted
+<span class="math inline">\(p\)</span>-values back into a “haircut” on
+the reported Sharpe ratio, with the economic framing developed in <span
+class="citation" data-cites="harveyliu2014evaluating">Harvey and Liu
+(2014)</span>. A third lineage tests the entire search at once: White’s
+Reality Check <span class="citation"
+data-cites="white2000reality">(White 2000)</span> bootstraps the
+distribution of the <em>best</em> performance across all trials under
+the null, and <span class="citation" data-cites="hansen2005spa">Hansen
+(2005)</span> sharpened it against irrelevant alternatives via
+studentization. <span class="citation"
+data-cites="lopezdeprado2018advances">López de Prado (2018)</span>
+surveys these tools alongside the non-parametric Probability of Backtest
+Overfitting of <span class="citation"
+data-cites="baileyetal2017pbo">Bailey et al. (2017)</span>.</p>
+<p>What is harder to find in this literature is a <em>controlled</em>
+comparison: experiments in which the ground truth is known by
+construction — because the data-generating process is synthetic and
+seeded — so that false-discovery rates and detection power can be
+measured directly rather than argued about. That is the gap this paper
+fills. We make no claim of new estimators; the contribution is
+calibration evidence and an honest account of a failure mode and of what
+can, and cannot, be salvaged from it.</p>
+<p>Concretely, we run four experiments (Section <a href="#sec:design"
+data-reference-type="ref" data-reference="sec:design">3</a>) against the
+estimators of Section <a href="#sec:estimators"
+data-reference-type="ref" data-reference="sec:estimators">2</a>:</p>
+<ol>
+<li><p><strong>Null calibration.</strong> Select the best of <span
+class="math inline">\(N = 1000\)</span> independent zero-skill
+strategies, 2000 times. The naive single test certifies a discovery in
+every repetition; DSR, the Harvey–Liu haircuts, and the Reality Check
+bring the false-discovery rate to between 0.001 and 0.057, at or near
+the nominal level. The deflated benchmark <span
+class="math inline">\(SR_0\)</span> reproduces the empirical noise
+ceiling to two decimals (both 1.63 annualized).</p></li>
+<li><p><strong>Planted power.</strong> With 25 genuine strategies hidden
+among 1000, DSR’s detection power traces an S-curve that crosses just
+above the noise ceiling: edges below the ceiling are statistically
+indistinguishable from luck; edges above it are retained with power
+approaching one, at a measured false-positive rate of 0.000.</p></li>
+<li><p><strong>A realistic search on noise.</strong> A moving-average
+crossover grid of 640 correlated configurations, applied to a pure
+random walk, yields a winner with annualized Sharpe 0.81. Every
+estimator rejects it, at every choice of effective trial count.</p></li>
+<li><p><strong>The same search on a real edge.</strong> On a
+regime-switching series the in-sample selected maximum is an annualized
+Sharpe of 3.92 and the bootstrap tests certify it decisively — but DSR,
+fed the raw trial count of 640, <em>wrongly rejects</em> the genuine
+edge. The obvious repair, an effective number of trials, is not a single
+number: five standard estimators computed on the same trial matrix span
+1.6 to 370.0. Four of the five retain the edge — including mid-range
+estimators whose deflated bar is a genuine annualized 1.85–2.00 — and
+DSR retains it for every effective count below 144.8 while rejecting the
+noise winner at every effective count. We argue that this robustness
+band, not any point estimate, is the honest deliverable of
+effective-<span class="math inline">\(N\)</span> deflation, and we
+document where the band’s lower anchor is misleading.</p></li>
+</ol>
+<p>Section <a href="#sec:results" data-reference-type="ref"
+data-reference="sec:results">4</a> reports the numbers, Section <a
+href="#sec:discussion" data-reference-type="ref"
+data-reference="sec:discussion">5</a> draws the practical lessons, and
+Section <a href="#sec:limitations" data-reference-type="ref"
+data-reference="sec:limitations">6</a> states the limitations plainly.
+All results derive from one seeded run of one public harness; a
+companion script verifies every numeric claim in this manuscript against
+the run’s JSON output.</p>
+<h1 id="sec:estimators">Estimators</h1>
+<h4 id="notation.">Notation.</h4>
+<p>Sharpe ratios are per-observation, <span
+class="math inline">\(\widehat{SR}= \hat\mu /
+\hat\sigma\)</span> computed on <span class="math inline">\(T\)</span>
+return observations, unless explicitly annualized; annualized values
+multiply the per-observation value by <span
+class="math inline">\(\sqrt{252}\)</span> (we treat 252 observations as
+one year of daily data). <span class="math inline">\(\Phi\)</span> and
+<span class="math inline">\(\Phi^{-1}\)</span> denote the standard
+normal CDF and quantile function. Tests are one-sided (skill means <span
+class="math inline">\(SR &gt; 0\)</span>) at level <span
+class="math inline">\(\alpha = 0.05\)</span> throughout. Equation-number
+citations below refer to the numbering printed in the primary sources,
+which we re-extracted from the authors’ posted full texts for <span
+class="citation"
+data-cites="baileylopezdeprado2012psr baileylopezdeprado2014dsr harveyliu2015backtesting">Bailey
+and López de Prado (2012, 2014; Harvey and Liu 2015)</span>; the tests
+of Section <a href="#sec:rcspa" data-reference-type="ref"
+data-reference="sec:rcspa">2.4</a> are described per their standard
+characterization, as discussed there.</p>
+<h2 id="sec:psr">Probabilistic Sharpe Ratio</h2>
+<p>The PSR of <span class="citation"
+data-cites="baileylopezdeprado2012psr">Bailey and López de Prado
+(2012)</span>, their Eq. (11), with the estimated variance of <span
+class="math inline">\(\widehat{SR}\)</span> from their Eq. (8) (a result
+they attribute to Mertens), is the probability that the true Sharpe
+ratio exceeds a benchmark <span class="math inline">\(SR^{*}\)</span>
+given the sample evidence: <span class="math display">\[\begin{equation}
+\tag{1}
+\widehat{\mathrm{PSR}}(SR^{*})
+= \Phi\!\left[
+\frac{(\widehat{SR}- SR^{*})\,\sqrt{T-1}}
+{\sqrt{\,1-\hat{\gamma}_{3}\widehat{SR}+\frac{\hat{\gamma}_{4}-1}{4}\widehat{SR}^{2}\,}}
+\right],
+\end{equation}\]</span> where <span
+class="math inline">\(\hat\gamma_3\)</span> is the sample skewness and
+<span class="math inline">\(\hat\gamma_4\)</span> the sample kurtosis of
+the strategy’s returns in the <em>non-excess</em> convention (normal
+returns give <span class="math inline">\(\hat\gamma_4 = 3\)</span>). The
+convention matters: for normal returns the denominator reduces to the
+classical asymptotic <span
+class="math inline">\(\mathbb{V}[\widehat{SR}]\approx(1+SR^{2}/2)/T\)</span>,
+which only happens with non-excess kurtosis; substituting excess
+kurtosis silently corrupts the deflation. All quantities are computed in
+the returns’ native frequency — the source is explicit that PSR is
+invariant to calendar conventions, so no annualization enters the test
+itself. The same expression is restated as Eq. (2) of <span
+class="citation" data-cites="baileylopezdeprado2014dsr">Bailey and López
+de Prado (2014)</span>.</p>
+<h2 id="sec:dsr">Deflated Sharpe Ratio</h2>
+<p>The DSR of <span class="citation"
+data-cites="baileylopezdeprado2014dsr">Bailey and López de Prado
+(2014)</span> is PSR evaluated at a benchmark that is not zero but the
+expected maximum Sharpe ratio that a search of <span
+class="math inline">\(N\)</span> independent zero-skill trials would
+produce. Let <span
+class="math inline">\(\{\widehat{SR}_{n}\}_{n=1}^{N}\)</span> be the
+Sharpe estimates of all trials in the search, with empirical mean <span
+class="math inline">\(\hat\mu_{SR}\)</span> and variance <span
+class="math inline">\(\widehat{V}_{SR}\)</span>. Their Eq. (1) (derived
+in their appendix as Eqs. (5)–(6) via an extreme-value approximation to
+the expected maximum of <span class="math inline">\(N\)</span> iid
+standard normal draws) gives the deflated benchmark <span
+class="math display">\[\begin{equation}
+\tag{2}
+SR_{0} = \hat\mu_{SR} + \sqrt{\widehat{V}_{SR}}
+\left[(1-\gamma)\,\Phi^{-1}\!\Big(1-\frac{1}{N}\Big)
++ \gamma\,\Phi^{-1}\!\Big(1-\frac{1}{Ne}\Big)\right],
+\end{equation}\]</span> where <span class="math inline">\(\gamma \approx
+0.5772\)</span> is the Euler–Mascheroni constant and <span
+class="math inline">\(e\)</span> is Euler’s number. Their Eq. (1) states
+the benchmark under the null <span
+class="math inline">\(\mathbb{E}[\widehat{SR}_n] = 0\)</span>, in which
+the mean term vanishes; we carry the empirical mean <span
+class="math inline">\(\hat\mu_{SR}\)</span> to match the authors’ own
+reference implementation (function <code>getExpMaxSR</code> in the
+published paper), which does the same. Then <span
+class="math display">\[\begin{equation}
+\tag{3}
+\widehat{\mathrm{DSR}} = \widehat{\mathrm{PSR}}(SR_{0}),
+\end{equation}\]</span> their Eq. (2), computed with the
+<em>selected</em> strategy’s own <span
+class="math inline">\(\widehat{SR}\)</span>, <span
+class="math inline">\(T\)</span>, <span
+class="math inline">\(\hat\gamma_3\)</span>, and <span
+class="math inline">\(\hat\gamma_4\)</span> in Eq. (1). We
+flag a discovery when <span class="math inline">\(\widehat{\mathrm{DSR}}
+&gt; 1-\alpha = 0.95\)</span>.</p>
+<p>Three properties of Eq. (2) drive everything that follows.
+First, <span class="math inline">\(SR_0\)</span> grows with the search:
+roughly like the square root of <span class="math inline">\(\log
+N\)</span> through the quantile terms, and proportionally to the
+cross-trial dispersion <span
+class="math inline">\(\sqrt{\widehat{V}_{SR}}\)</span>, which itself
+shrinks like one over the square root of <span
+class="math inline">\(T\)</span> under the null. The deflated bar is
+therefore a <em>noise ceiling</em> specific to the search size and
+sample length. Second, the dispersion term treats the observed spread of
+trial Sharpes as pure luck: when part of that spread is produced by
+genuinely skilled trials, Eq. (2) reads
+real skill as more luck to deflate against. Third — the caveat printed
+in the source itself — the derivation assumes the <span
+class="math inline">\(N\)</span> trials are <em>independent</em>. The
+paper’s Appendix 3 addresses determining <span
+class="math inline">\(N\)</span> when they are not; Section <a
+href="#sec:neff" data-reference-type="ref"
+data-reference="sec:neff">2.5</a> returns to this point, which turns out
+to be the single most consequential implementation decision in our
+experiments.</p>
+<h2 id="sec:hl">Harvey–Liu haircuts</h2>
+<p><span class="citation" data-cites="harveyliu2015backtesting">Harvey
+and Liu (2015)</span> start from the exact algebraic link between the
+Sharpe ratio and the single-test <span
+class="math inline">\(t\)</span>-statistic (their Eqs. (1)–(2)): <span
+class="math inline">\(t = \widehat{SR}\sqrt{T}\)</span>, from which a
+one-sided <span class="math inline">\(p\)</span>-value follows, <span
+class="math inline">\(p = 1 - \Phi(t)\)</span> under the normal
+approximation. Testing <span class="math inline">\(M\)</span> strategies
+yields ordered <span class="math inline">\(p\)</span>-values <span
+class="math inline">\(p_{(1)} \le \dots \le p_{(M)}\)</span>, which are
+adjusted by one of three classical procedures — Bonferroni, Holm <span
+class="citation" data-cites="holm1979">(Holm 1979)</span>, and
+Benjamini–Hochberg–Yekutieli <span class="citation"
+data-cites="benjaminihochberg1995 benjaminiyekutieli2001">(BHY;
+Benjamini and Hochberg 1995; Benjamini and Yekutieli 2001)</span>: <span
+class="math display">\[\begin{align}
+\text{Bonferroni:}\quad
+&amp; p^{\mathrm{Bonf}}_{(i)} = \min\!\big[M\,p_{(i)},\,1\big],
+\tag{4}\\[2pt]
+\text{Holm:}\quad
+&amp; p^{\mathrm{Holm}}_{(i)} = \min\!\Big[\max_{j\le
+i}\,(M-j+1)\,p_{(j)},\,1\Big],
+\tag{5}\\[2pt]
+\text{BHY:}\quad
+&amp; p^{\mathrm{BHY}}_{(M)} = p_{(M)}, \qquad
+p^{\mathrm{BHY}}_{(i)} = \min\!\Big[p^{\mathrm{BHY}}_{(i+1)},\,
+\frac{M\,c(M)}{i}\,p_{(i)}\Big],
+\tag{6}
+\end{align}\]</span> where the step-up recursion in Eq. (6) runs from <span
+class="math inline">\(i = M-1\)</span> down to the smallest <span
+class="math inline">\(p\)</span>-value, with the normalizing constant
+<em>multiplying</em> the adjustment, <span
+class="math display">\[\begin{equation}
+\tag{7}
+c(M) = \sum_{j=1}^{M}\frac{1}{j}.
+\end{equation}\]</span> <span class="citation"
+data-cites="benjaminihochberg1995">Benjamini and Hochberg (1995)</span>
+originally set <span class="math inline">\(c(M) = 1\)</span>, valid
+under independence or positive dependence; Harvey and Liu adopt the
+<span class="citation" data-cites="benjaminiyekutieli2001">Benjamini and
+Yekutieli (2001)</span> harmonic-sum choice precisely because it
+controls the false-discovery rate under <em>arbitrary</em> dependence
+among the test statistics — the situation of correlated backtest trials.
+The constant grows slowly: <span class="math inline">\(c(1000) \approx
+7.49\)</span>, so the price of dependence-robustness is less than one
+order of magnitude. Bonferroni and Holm control the familywise error
+rate <span class="math inline">\(\mathrm{FWER} = \Pr(\text{at least one
+false rejection})\)</span>; BHY controls the false-discovery rate <span
+class="math inline">\(\mathrm{FDR} = \mathbb{E}[\text{false
+rejections}/\text{rejections}]\)</span>, a more lenient criterion for
+the <em>bulk</em> of hypotheses. One rank-specific subtlety matters for
+everything we report: the best-strategy haircut evaluates only the
+<em>top-ranked</em> hypothesis, and at rank one Holm coincides with
+Bonferroni exactly — <span class="math inline">\((M-1+1)\,p_{(1)} =
+M\,p_{(1)}\)</span> — so the two never disagree about a search winner
+and should not be read as independent corroboration. Moreover, BHY
+multiplies the top <span class="math inline">\(p\)</span>-value by <span
+class="math inline">\(M\,c(M) \ge M\)</span>, so for the top pick BHY is
+the <em>most</em> conservative of the three, even though it controls the
+more lenient criterion overall.</p>
+<p>The adjusted <span class="math inline">\(p\)</span>-value of the
+search winner is then converted back through the <span
+class="math inline">\(t\)</span>-statistic link into a haircut Sharpe
+ratio <span class="math inline">\(SR_{\mathrm{adj}}\)</span> — “the
+Sharpe ratio that would have resulted from a single test” — and the
+headline quantity is the haircut fraction <span
+class="math display">\[\begin{equation}
+\tag{8}
+\mathrm{hc} = 1 - \frac{SR_{\mathrm{adj}}}{\widehat{SR}}.
+\end{equation}\]</span></p>
+<h2 id="sec:rcspa">Reality Check and the studentized (SPA-type)
+variant</h2>
+<p>The tests above operate on summary statistics of the trials. White’s
+Reality Check <span class="citation"
+data-cites="white2000reality">(White 2000)</span> instead tests the
+whole search at once, using the full <span class="math inline">\(T
+\times K\)</span> matrix of trial returns (in excess of a benchmark;
+ours is zero, i.e. not trading). With <span class="math inline">\(\bar
+f_{k}\)</span> the sample mean performance of trial <span
+class="math inline">\(k\)</span>, the null is <span
+class="math inline">\(H_{0}\colon \max_{k}\mathbb{E}[f_{k}] \le
+0\)</span> and the statistic is the scaled best average, <span
+class="math inline">\(V = \max_{k}\sqrt{T}\,\bar f_{k}\)</span>. Its
+distribution under the null is approximated by the stationary bootstrap
+of <span class="citation" data-cites="politisromano1994">Politis and
+Romano (1994)</span>: resampled series are built from blocks of
+geometrically distributed random length (expected block length <span
+class="math inline">\(1/p\)</span>), wrapping circularly so the resample
+is itself stationary. Each bootstrap replication recenters every trial
+by its own full-sample mean, so the resampled world satisfies the null
+by construction, and the <span class="math inline">\(p\)</span>-value is
+the add-one fraction of bootstrap statistics <span
+class="math inline">\(V^{*b} = \max_{k}\sqrt{T}\,(\bar f^{*b}_{k} - \bar
+f_{k})\)</span> that reach the observed <span
+class="math inline">\(V\)</span>, i.e. <span class="math inline">\(\hat
+p = (1 + \#\{V^{*b} \ge V\})/(B+1)\)</span>. Because the bootstrap
+resamples all <span class="math inline">\(K\)</span> trial series
+<em>jointly</em>, the cross-trial correlation structure is preserved
+exactly; no independent-trials assumption enters anywhere.</p>
+<p><span class="citation" data-cites="hansen2005spa">Hansen
+(2005)</span> showed that the unstandardized maximum can be dominated by
+poor, high-variance alternatives, making the Reality Check conservative,
+and proposed the Superior Predictive Ability (SPA) test with two
+modifications: studentizing each trial by an estimate of its own
+standard error before taking the maximum, and a sample-dependent
+(consistent) recentering of the null distribution. Our implementation
+applies only the first modification — each trial’s statistic is divided
+by its sample standard deviation, with White’s full recentering retained
+— so it is a <em>studentized Reality Check</em>, not Hansen’s full SPA;
+we label it “SPA-type” everywhere in this paper, and note that omitting
+Hansen’s recentering can only make it more conservative. One honesty
+flag: unlike Sections <a href="#sec:psr" data-reference-type="ref"
+data-reference="sec:psr">2.1</a>–<a href="#sec:hl"
+data-reference-type="ref" data-reference="sec:hl">2.3</a>, whose
+equations we re-extracted from the primary texts, this subsection
+follows the standard characterization of <span class="citation"
+data-cites="white2000reality">White (2000)</span>, <span
+class="citation" data-cites="hansen2005spa">Hansen (2005)</span>, and
+<span class="citation" data-cites="politisromano1994">Politis and Romano
+(1994)</span>; we cite no equation numbers from those papers.</p>
+<h2 id="sec:neff">Effective number of trials: a spread, not a
+number</h2>
+<p>Equation (2) needs the number of
+<em>independent</em> trials, and a parameter grid does not supply that
+number directly: neighboring configurations trade nearly identical
+positions. Three strands of the literature converge on the same warning.
+<span class="citation" data-cites="baileylopezdeprado2014dsr">Bailey and
+López de Prado (2014)</span> state the independence assumption and point
+to their Appendix 3 for an effective-<span
+class="math inline">\(N\)</span> construction under dependence. <span
+class="citation" data-cites="harveyliu2015backtesting">Harvey and Liu
+(2015)</span> adopt the BHY constant of Eq. (7)
+specifically for dependence robustness. <span class="citation"
+data-cites="harveyliuzhu2016">Harvey et al. (2016)</span> model the
+correlation among the factors they audit rather than counting them,
+arriving at a <span class="math inline">\(t\)</span>-hurdle of roughly
+three for contemporary discoveries.</p>
+<p>There is, however, no canonical estimator of the effective trial
+count, and the candidates disagree — in our experiments, by two orders
+of magnitude on the same matrix. We therefore compute five standard ones
+and report the whole spread. With <span
+class="math inline">\(\bar\rho\)</span> the average pairwise correlation
+among the <span class="math inline">\(K\)</span> trial return series,
+the average-correlation estimate is <span
+class="math display">\[\begin{equation}
+\tag{9}
+N_{\mathrm{eff}}^{\mathrm{corr}} = \frac{K}{1 + (K-1)\,\bar\rho},
+\end{equation}\]</span> the variance-reduction factor of the
+<em>mean</em> of <span class="math inline">\(K\)</span> equicorrelated
+variables — exact in that setting, and the smallest of the five in
+practice. A functional mismatch deserves flagging here: DSR’s benchmark
+is an expected <em>maximum</em> (an extreme-value quantity), not a mean,
+and there is no reason the effective count appropriate for averaging
+transfers to extremes; Eq. (9) is
+best read as a lower anchor. The remaining four work from the
+eigenvalues <span class="math inline">\(\lambda_1 \ge \lambda_2 \ge
+\dots\)</span> of the <span class="math inline">\(K \times K\)</span>
+trial correlation matrix (which sum to <span
+class="math inline">\(K\)</span>): the <em>participation ratio</em>
+<span class="math inline">\((\sum_i\lambda_i)^2 /
+\sum_i\lambda_i^2\)</span>; <em>PCA-95</em>, the number of leading
+eigenvalues needed to explain 95% of total variance; the <em>Kaiser
+criterion</em>, the count of eigenvalues exceeding one; and the
+<em>Cheverud–Nyholt</em> estimate <span class="math inline">\(1 +
+(K-1)\bigl(1 - \mathrm{Var}(\lambda)/K\bigr)\)</span>, a standard recipe
+imported from the multiple-testing literature in statistical genetics,
+known to over-count effective tests under strong equicorrelation and in
+practice the largest of the five (the upper anchor). We cite no primary
+sources for these four; they are used here as widely known recipes, not
+endorsed estimators.</p>
+<p>Because <span class="math inline">\(\widehat{\mathrm{DSR}}\)</span>
+is monotonically decreasing in <span class="math inline">\(N\)</span>,
+feeding each estimate into Eq. (2) traces
+a curve, and the entire analysis can be compressed into one number found
+by bisection: <span class="math display">\[\begin{equation}
+\tag{10}
+N^{*} = \max\bigl\{N \ge 2 : \widehat{\mathrm{DSR}}(N) &gt;
+1-\alpha\bigr\},
+\end{equation}\]</span> the largest effective trial count at which the
+winner still survives. A claimed discovery then comes with a robustness
+band — “retained for every <span
+class="math inline">\(N_{\mathrm{eff}}&lt; N^{*}\)</span>” — instead of
+a verdict conditioned on one contestable point estimate. One domain
+note: the expected-maximum formula is defined for <span
+class="math inline">\(N \ge 2\)</span> (the <span
+class="math inline">\(\Phi^{-1}(1-1/N)\)</span> term diverges as <span
+class="math inline">\(N \to 1\)</span>), so fractional estimates below
+two are evaluated at the <span class="math inline">\(N = 2\)</span>
+floor.</p>
+<h1 id="sec:design">Experimental design</h1>
+<p>All experiments are generated and analyzed by a single Python harness
+(<code>scripts/run_all.py</code>, estimators in
+<code>scripts/deflate.py</code>), under Python 3.14.6 with NumPy 2.4.3.
+Every random stream is seeded, so every number in this paper is
+bit-reproducible by one command. Ground truth is known by construction
+in each experiment: we know which strategies have skill because we
+planted them. A verification script
+(<code>scripts/check_paper_numbers.py</code>) checks every numeric claim
+in this manuscript against the harness output
+<code>results/results.json</code>; values quoted below are rounded from
+that file, and quantities labeled <em>derived</em> are arithmetic
+combinations of its entries (annualization by <span
+class="math inline">\(\sqrt{252}\)</span>, differences, products,
+interpolation).</p>
+<h2 id="sec:design-null">Experiment 1: null calibration</h2>
+<p>Each repetition draws a <span class="math inline">\(T \times
+N\)</span> matrix of iid standard normal returns with <span
+class="math inline">\(T = 1000\)</span> observations (about four years
+of daily data) and <span class="math inline">\(N = 1000\)</span>
+strategies — every true Sharpe ratio is exactly zero. We select the
+winner <span class="math inline">\(\widehat{SR}_{\max} = \max_n
+\widehat{SR}_n\)</span> and ask each procedure whether it certifies a
+discovery at <span class="math inline">\(\alpha = 0.05\)</span>:</p>
+<ul>
+<li><p><em>Naive:</em> one-sided single test on the winner, <span
+class="math inline">\(p = 1-\Phi(\widehat{SR}_{\max}\sqrt{T}) &lt;
+\alpha\)</span>, ignoring the search;</p></li>
+<li><p><em>DSR:</em> Eq. (3) <span class="math inline">\(&gt;
+0.95\)</span>, with all <span class="math inline">\(N\)</span> trial
+Sharpes informing <span class="math inline">\(SR_0\)</span>;</p></li>
+<li><p><em>Harvey–Liu:</em> adjusted <span
+class="math inline">\(p\)</span>-value of the winner below <span
+class="math inline">\(\alpha\)</span> under each of Eqs. (4)–(6) with
+<span class="math inline">\(M = N\)</span>;</p></li>
+<li><p><em>Reality Check:</em> bootstrap <span class="math inline">\(p
+&lt; \alpha\)</span> on the full return matrix.</p></li>
+</ul>
+<p>The closed-form procedures run over <span class="math inline">\(M =
+2000\)</span> repetitions. The Reality Check, being bootstrap-based,
+runs over 400 repetitions with 500 stationary bootstrap resamples each
+(expected block length 20; the null data are iid, so blocking is
+harmless). Under a global null every certified discovery is false, so
+the empirical discovery rate <em>is</em> the false-discovery rate.</p>
+<h2 id="sec:design-power">Experiment 2: planted power</h2>
+<p>Calibration is cheap if a test never fires; the counterpart question
+is power. We repeat the setup of Experiment 1 but add a constant
+per-observation drift <span
+class="math inline">\(s_{\mathrm{true}}\)</span> to <span
+class="math inline">\(n_{\mathrm{true}} = 25\)</span> randomly chosen
+strategies per repetition, giving them true per-observation Sharpe <span
+class="math inline">\(s_{\mathrm{true}} \in
+\{0.05, 0.08, 0.12, 0.16, 0.20\}\)</span> (annualized 0.79 to 3.17),
+with 1000 repetitions per level. We record whether DSR certifies the
+search winner, and whether that winner is genuinely one of the planted
+strategies (a true positive) or an impostor (a false positive). For
+reference we also record how often the naive test certifies a winner
+that happens to be planted. Two scope notes, stated up front: the power
+figures are specific to this configuration (25 planted among <span
+class="math inline">\(N = 1000\)</span>, <span class="math inline">\(T =
+1000\)</span>) — we did not sweep these parameters — and Experiment 2
+measures the power of DSR only; the retention behavior of the other
+procedures is probed through the single case study of Experiment 4.</p>
+<h2 id="sec:design-search">Experiments 3–4: a realistic search, without
+and with an edge</h2>
+<p>The first two experiments use independent trials — exactly the world
+Eq. (2) assumes. Real searches are not like
+that, so we build one. A moving-average crossover strategy computes fast
+and slow simple moving averages of the log price and holds the position
+<span class="math inline">\(\mathrm{sign}(\mathrm{MA}_{f} -
+\mathrm{MA}_{s}) \in \{-1, 0, +1\}\)</span>; the grid sweeps <span
+class="math inline">\(f \in \{3, 6, \ldots, 48\}\)</span> (16 values)
+and <span class="math inline">\(s \in \{55, 60, \ldots, 250\}\)</span>
+(40 values), <span class="math inline">\(K = 640\)</span> configurations
+in all. Positions are strictly causal — the position formed at
+observation <span class="math inline">\(t\)</span> earns the return at
+<span class="math inline">\(t+1\)</span> — and frictionless (no
+transaction costs; the point here is selection inference, not net
+profitability). The price series has <span class="math inline">\(T =
+756\)</span> daily returns (three years at 252 observations per year),
+leaving 755 tradable strategy returns per configuration.</p>
+<p>Two data-generating processes, identical in every respect except the
+presence of skill to find:</p>
+<ul>
+<li><p><em>Noise (Experiment 3):</em> iid Gaussian returns with zero
+mean and standard deviation 0.01 per observation — a pure random walk in
+log price. No configuration has true skill; the correct verdict is
+rejection.</p></li>
+<li><p><em>Regime edge (Experiment 4):</em> the same Gaussian noise plus
+a regime-switching drift <span class="math inline">\(d_t = s_t \cdot
+0.006\)</span>, where the state <span class="math inline">\(s_t \in
+\{-1, +1\}\)</span> flips with probability 0.02 per observation
+(expected regime length 50 observations). Trends persist for weeks at a
+time; a crossover rule genuinely can extract this. An omniscient
+regime-follower would earn per-observation Sharpe 0.6 (about 9.5
+annualized — derived), so a good deal of real skill is available; the
+correct verdict is retention.</p></li>
+</ul>
+<p>Each search is analyzed exactly as a practitioner would analyze a
+live sweep: naive <span class="math inline">\(p\)</span>-value and
+un-deflated PSR against zero for the winner; DSR under the raw trial
+count <span class="math inline">\(N = K\)</span> and under each of the
+five effective-count estimators of Section <a href="#sec:neff"
+data-reference-type="ref" data-reference="sec:neff">2.5</a>, together
+with the survival crossing <span class="math inline">\(N^{*}\)</span> of
+Eq. (10); Reality Check and the SPA-type
+test on the full <span class="math inline">\(755 \times 640\)</span>
+return matrix (5000 resamples for these case studies, expected block
+length 20); and the three Harvey–Liu haircuts with <span
+class="math inline">\(M = K\)</span>.</p>
+<h1 id="sec:results">Results</h1>
+<h2 id="sec:res-null">Null calibration: the naive verdict is always
+wrong</h2>
+<p>Table <a href="#tab:null" data-reference-type="ref"
+data-reference="tab:null">1</a> shows the false-discovery rates.
+Selecting the best of 1000 zero-skill strategies produced an average
+best per-observation Sharpe corresponding to an annualized 1.63, and the
+naive analyst’s median <span class="math inline">\(p\)</span>-value on
+that winner was 0.00069 — apparently overwhelming evidence, in every
+single repetition (false-discovery rate 1.000). This is the
+multiple-testing machine at work: the naive test answers “could <em>this
+one</em> strategy be zero-skill?” when the question posed by the search
+is “could the <em>best of a thousand</em> be the product of zero
+skill?”</p>
+<div id="tab:null">
+<table>
+<caption>Experiment 1 (global null): empirical false-discovery rate at
+<span class="math inline">\(\alpha = 0.05\)</span>, i.e. the share of
+repetitions in which each procedure certifies the best of <span
+class="math inline">\(N = 1000\)</span> zero-skill strategies as a
+discovery. Closed-form procedures: 2000 repetitions; Reality Check: 400
+repetitions of 500 stationary-bootstrap resamples. Bonferroni and Holm
+are reported as one row because they coincide exactly for the top-ranked
+winner (Section <a href="#sec:hl" data-reference-type="ref"
+data-reference="sec:hl">2.3</a>). Monte Carlo standard error of a
+proportion near the nominal level is about 0.005.</caption>
+<thead>
+<tr>
+<th style="text-align: left;">Procedure</th>
+<th style="text-align: left;">Discovery rule</th>
+<th style="text-align: left;">Error criterion</th>
+<th style="text-align: left;">FDR</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Naive single test</td>
+<td style="text-align: left;"><span class="math inline">\(p &lt;
+0.05\)</span></td>
+<td style="text-align: left;">none (ignores search)</td>
+<td style="text-align: left;">1.000</td>
+</tr>
+<tr>
+<td style="text-align: left;">DSR</td>
+<td style="text-align: left;"><span
+class="math inline">\(\widehat{\mathrm{DSR}} &gt; 0.95\)</span></td>
+<td style="text-align: left;">deflated benchmark</td>
+<td style="text-align: left;">0.001</td>
+</tr>
+<tr>
+<td style="text-align: left;">Harvey–Liu, Bonferroni <span
+class="math inline">\(=\)</span> Holm</td>
+<td style="text-align: left;">adj. <span class="math inline">\(p &lt;
+0.05\)</span></td>
+<td style="text-align: left;">FWER</td>
+<td style="text-align: left;">0.057</td>
+</tr>
+<tr>
+<td style="text-align: left;">Harvey–Liu, BHY</td>
+<td style="text-align: left;">adj. <span class="math inline">\(p &lt;
+0.05\)</span></td>
+<td style="text-align: left;">FDR</td>
+<td style="text-align: left;">0.007</td>
+</tr>
+<tr>
+<td style="text-align: left;">White Reality Check</td>
+<td style="text-align: left;">bootstrap <span class="math inline">\(p
+&lt; 0.05\)</span></td>
+<td style="text-align: left;">test of the max</td>
+<td style="text-align: left;">0.0225</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Every correction restores control, each with its own personality.
+Bonferroni and Holm — identical for the winner by construction — sit at
+0.057, statistically indistinguishable from the nominal level (within
+about two Monte Carlo standard errors of 0.005; the small excess is
+consistent with the normal approximation to the <span
+class="math inline">\(t\)</span>-statistic being slightly optimistic in
+the extreme tail where <span class="math inline">\(\min_n p_n\)</span>
+lives). BHY lands at 0.007 — close to <span class="math inline">\(\alpha
+/ c(1000) \approx 0.007\)</span> (derived), which is exactly the
+conservatism its harmonic-sum constant buys as insurance against
+dependence that this iid experiment does not actually contain, and
+consistent with BHY being the most conservative of the three at rank
+one. The Reality Check comes in at 0.0225, conservative in the direction
+<span class="citation" data-cites="hansen2005spa">Hansen (2005)</span>
+predicted for the unstandardized statistic. DSR is the strictest of all
+at 0.001, and the reason is instructive: its bar is not a significance
+level but the noise ceiling itself. The average deflated benchmark <span
+class="math inline">\(SR_0\)</span> across repetitions was 1.63
+annualized (derived from the per-observation value) — identical to two
+decimals with the average realized maximum. Eq. (2) is
+doing precisely its job: predicting what the best of <span
+class="math inline">\(N\)</span> lucky draws looks like, and refusing to
+be impressed by it. Consistent with calibration, the DSR value of the
+null winner averaged 0.495 across repetitions, indistinguishable from
+the ideal 0.5 — the estimator judges the typical lucky winner exactly as
+likely as not to beat the luck benchmark, which is the correct
+answer.</p>
+<h2 id="sec:res-power">Planted power: the S-curve crosses just above the
+noise ceiling</h2>
+<p>Table <a href="#tab:power" data-reference-type="ref"
+data-reference="tab:power">2</a> reports DSR’s detection power against
+the planted true Sharpe ratio. The pattern is a sharp S-curve positioned
+just above the noise ceiling of Experiment 1: linear interpolation
+between the two adjacent grid levels puts the 50%-power point near an
+annualized 1.73 (derived), slightly above the ceiling of 1.63 rather
+than at it. A genuine annualized Sharpe of 0.79 — respectable in
+production — is essentially undetectable (power 0.005): it lives so far
+below the ceiling that the search’s own noise drowns it, and indeed at
+that level the search winner is one of the planted strategies in only
+about two-thirds of repetitions (0.670). At annualized 1.27 the power is
+still only 0.090. Crossing the ceiling changes everything: 0.651 at
+annualized 1.90, then 0.998 at 2.54 and 1.000 at 3.17. Throughout the
+sweep the measured false-positive rate of DSR is 0.000 — in no
+repetition at any level did DSR certify an impostor. The naive column is
+a foil: it fires on essentially every winner (compare Table <a
+href="#tab:null" data-reference-type="ref"
+data-reference="tab:null">1</a>), so its apparent sensitivity carries no
+information about skill. We reiterate the scope note from Section <a
+href="#sec:design-power" data-reference-type="ref"
+data-reference="sec:design-power">3.2</a>: these are DSR power figures
+at one configuration, not a general power study.</p>
+<div id="tab:power">
+<table>
+<caption>Experiment 2 (planted signal): DSR detection power over 1000
+repetitions per level, with 25 planted strategies among <span
+class="math inline">\(N = 1000\)</span> and <span
+class="math inline">\(T = 1000\)</span>. “Naive hit” is the share of
+repetitions in which the naive test certifies the winner <em>and</em>
+the winner is genuinely planted; since the naive test essentially always
+fires, this column mostly measures how often the best-by-Sharpe trial is
+a planted one.</caption>
+<thead>
+<tr>
+<th style="text-align: right;">True <span
+class="math inline">\(SR\)</span> (per obs.)</th>
+<th style="text-align: right;">True <span
+class="math inline">\(SR\)</span> (annual)</th>
+<th style="text-align: right;">DSR power</th>
+<th style="text-align: right;">DSR false-pos. rate</th>
+<th style="text-align: right;">Naive hit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">0.05</td>
+<td style="text-align: right;">0.79</td>
+<td style="text-align: right;">0.005</td>
+<td style="text-align: right;">0.000</td>
+<td style="text-align: right;">0.670</td>
+</tr>
+<tr>
+<td style="text-align: right;">0.08</td>
+<td style="text-align: right;">1.27</td>
+<td style="text-align: right;">0.090</td>
+<td style="text-align: right;">0.000</td>
+<td style="text-align: right;">0.984</td>
+</tr>
+<tr>
+<td style="text-align: right;">0.12</td>
+<td style="text-align: right;">1.90</td>
+<td style="text-align: right;">0.651</td>
+<td style="text-align: right;">0.000</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr>
+<td style="text-align: right;">0.16</td>
+<td style="text-align: right;">2.54</td>
+<td style="text-align: right;">0.998</td>
+<td style="text-align: right;">0.000</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr>
+<td style="text-align: right;">0.20</td>
+<td style="text-align: right;">3.17</td>
+<td style="text-align: right;">1.000</td>
+<td style="text-align: right;">0.000</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The practical reading is sobering and useful: given this search size
+and sample length, the deflated bar sits at an annualized Sharpe of
+roughly 1.63, and <em>no statistical procedure operating on the same
+evidence can do fundamentally better</em> — a sub-ceiling edge is not
+distinguishable from the best of a thousand lucky draws, however real it
+is. Deflation does not destroy value; it prices the evidence.</p>
+<h2 id="sec:res-noise">A realistic search on noise: everything correctly
+rejects</h2>
+<p>Table <a href="#tab:searches" data-reference-type="ref"
+data-reference="tab:searches">3</a> (left column) reports the
+moving-average sweep on a pure random walk. The winner — crossover <span
+class="math inline">\((45, 120)\)</span> — earned an annualized Sharpe
+of 0.81 over three years. Plotted, such an equity curve looks eminently
+fundable. Every layer of scrutiny disagrees. Even before any deflation,
+the winner is not single-test significant: the naive <span
+class="math inline">\(p\)</span>-value is 0.081 and the un-deflated PSR
+against a zero benchmark is 0.918, short of the 0.95 threshold (the
+sample is short and the Sharpe modest). Deflation-aware diagnostics
+reject with progressively more context. DSR with the raw <span
+class="math inline">\(N = 640\)</span> gives 0.431. The Reality Check
+and the SPA-type test, which resample the entire 640-trial matrix
+jointly (5000 resamples), return <span
+class="math inline">\(p\)</span>-values of 0.570 and 0.569: the observed
+best is entirely typical of a searched random walk. The Harvey–Liu
+adjusted <span class="math inline">\(p\)</span>-value of the winner is
+1.00 under Holm, and all three haircuts are total (1.00): the certified
+Sharpe after multiple-testing adjustment is zero.</p>
+<p>The effective-count band (Table <a href="#tab:neff"
+data-reference-type="ref" data-reference="tab:neff">4</a>, left half)
+adds the robustness statement: the five estimators span 1.6 to 379.9,
+the implied deflated bars run from an annualized 0.31 to 0.87, and the
+implied DSR values run from 0.805 down to 0.455 — <em>every</em> choice
+rejects, and the survival crossing of Eq. (10)
+confirms there is no effective trial count at which this winner
+survives. One honesty note that Section <a href="#sec:discussion"
+data-reference-type="ref" data-reference="sec:discussion">5</a>
+develops: at the smallest estimates the bar has collapsed to near zero
+and DSR nearly coincides with the un-deflated PSR (0.918), so the
+rejection <em>there</em> rests on the winner’s own modest raw
+significance rather than on any real deflation; the genuinely deflating
+verdicts are the mid-range and upper rows.</p>
+<div id="tab:searches">
+<table>
+<caption>Experiments 3–4: the same 640-configuration moving-average
+crossover search (<span class="math inline">\(T = 755\)</span> tradable
+returns) on a pure random walk (left) and on a regime-switching series
+with a real trend edge (right). Winner Sharpe ratios are in-sample
+<em>selected</em> maxima and therefore selection-inflated by
+construction. Bootstrap tests use 5000 resamples. Bonferroni and Holm
+haircuts coincide for the top-ranked winner (Section <a href="#sec:hl"
+data-reference-type="ref" data-reference="sec:hl">2.3</a>) and are
+reported as one row. The DSR discovery threshold is 0.95; for RC,
+SPA-type, and adjusted <span class="math inline">\(p\)</span>-values the
+threshold is <span class="math inline">\(\alpha =
+0.05\)</span>.</caption>
+<thead>
+<tr>
+<th style="text-align: left;"></th>
+<th style="text-align: right;">Noise (no skill)</th>
+<th style="text-align: right;">Regime edge (real skill)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Winner <span class="math inline">\((f,
+s)\)</span></td>
+<td style="text-align: right;"><span class="math inline">\((45,
+120)\)</span></td>
+<td style="text-align: right;"><span class="math inline">\((3,
+55)\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;">Winner <span
+class="math inline">\(SR\)</span>, in-sample selected (annualized)</td>
+<td style="text-align: right;">0.81</td>
+<td style="text-align: right;">3.92</td>
+</tr>
+<tr>
+<td style="text-align: left;">Naive one-sided <span
+class="math inline">\(p\)</span></td>
+<td style="text-align: right;">0.081</td>
+<td style="text-align: right;"><span class="math inline">\(6.1\times
+10^{-12}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;">Un-deflated <span
+class="math inline">\(\widehat{\mathrm{PSR}}(0)\)</span></td>
+<td style="text-align: right;">0.918</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr>
+<td style="text-align: left;">Mean pairwise correlation <span
+class="math inline">\(\bar\rho\)</span></td>
+<td style="text-align: right;">0.61</td>
+<td style="text-align: right;">0.62</td>
+</tr>
+<tr>
+<td style="text-align: left;"><span class="math inline">\(SR_0\)</span>
+with raw <span class="math inline">\(N = 640\)</span> (annualized)</td>
+<td style="text-align: right;">0.91</td>
+<td style="text-align: right;">3.51</td>
+</tr>
+<tr>
+<td style="text-align: left;">DSR with raw <span
+class="math inline">\(N\)</span></td>
+<td style="text-align: right;">0.431</td>
+<td style="text-align: right;">0.748</td>
+</tr>
+<tr>
+<td style="text-align: left;">Reality Check <span
+class="math inline">\(p\)</span></td>
+<td style="text-align: right;">0.570</td>
+<td style="text-align: right;">0.0024</td>
+</tr>
+<tr>
+<td style="text-align: left;">SPA-type (studentized RC) <span
+class="math inline">\(p\)</span></td>
+<td style="text-align: right;">0.569</td>
+<td style="text-align: right;">0.0038</td>
+</tr>
+<tr>
+<td style="text-align: left;">Harvey–Liu haircut, Bonferroni <span
+class="math inline">\(=\)</span> Holm</td>
+<td style="text-align: right;">1.00</td>
+<td style="text-align: right;">0.148</td>
+</tr>
+<tr>
+<td style="text-align: left;">Harvey–Liu haircut, BHY</td>
+<td style="text-align: right;">1.00</td>
+<td style="text-align: right;">0.198</td>
+</tr>
+<tr>
+<td style="text-align: left;">Holm-adjusted <span
+class="math inline">\(p\)</span> of winner</td>
+<td style="text-align: right;">1.00</td>
+<td style="text-align: right;"><span class="math inline">\(3.9\times
+10^{-9}\)</span></td>
+</tr>
+<tr>
+<td style="text-align: left;">Verdict, DSR (raw <span
+class="math inline">\(N\)</span>)</td>
+<td style="text-align: right;">reject (correct)</td>
+<td style="text-align: right;">reject (<strong>wrong</strong>)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Verdict, RC and SPA-type</td>
+<td style="text-align: right;">reject (correct)</td>
+<td style="text-align: right;">retain (correct)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Verdict, Harvey–Liu (all three)</td>
+<td style="text-align: right;">reject (correct)</td>
+<td style="text-align: right;">retain (correct)</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="tab:neff">
+<table>
+<caption>The effective-trial-count band for both searches: five standard
+estimators of <span class="math inline">\(N_{\mathrm{eff}}\)</span>, the
+deflated benchmark and DSR each implies, and the survival crossing <span
+class="math inline">\(N^{*}\)</span> of Eq. (10).
+Annualized <span class="math inline">\(SR_0\)</span> values are reported
+by the harness; the raw grid count is included for reference. The
+average-correlation estimates fall below the <span
+class="math inline">\(N = 2\)</span> domain floor of Eq. (2) and are evaluated at that floor.
+The five estimators span two orders of magnitude on the same matrix —
+the reason we report a band rather than a point verdict.</caption>
+<thead>
+<tr>
+<th style="text-align: left;"></th>
+<th colspan="3" style="text-align: center;">Noise (no skill)</th>
+<th style="text-align: center;"></th>
+<th colspan="3" style="text-align: center;">Regime edge (real
+skill)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><span>2-4</span> Estimator of <span
+class="math inline">\(N_{\mathrm{eff}}\)</span></td>
+<td style="text-align: right;"><span
+class="math inline">\(N_{\mathrm{eff}}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(SR_0\)</span>
+(ann.)</td>
+<td style="text-align: right;">DSR</td>
+<td style="text-align: center;"></td>
+<td style="text-align: right;"><span
+class="math inline">\(N_{\mathrm{eff}}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(SR_0\)</span>
+(ann.)</td>
+<td style="text-align: right;">DSR</td>
+</tr>
+<tr>
+<td style="text-align: left;">Average correlation, Eq. (9)</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">0.31</td>
+<td style="text-align: right;">0.805</td>
+<td style="text-align: center;"></td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">0.25</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr>
+<td style="text-align: left;">Participation ratio</td>
+<td style="text-align: right;">2.4</td>
+<td style="text-align: right;">0.35</td>
+<td style="text-align: right;">0.785</td>
+<td style="text-align: center;"></td>
+<td style="text-align: right;">2.4</td>
+<td style="text-align: right;">0.43</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr>
+<td style="text-align: left;">PCA (95% of variance)</td>
+<td style="text-align: right;">17</td>
+<td style="text-align: right;">0.61</td>
+<td style="text-align: right;">0.633</td>
+<td style="text-align: center;"></td>
+<td style="text-align: right;">16</td>
+<td style="text-align: right;">1.85</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr>
+<td style="text-align: left;">Kaiser criterion</td>
+<td style="text-align: right;">22</td>
+<td style="text-align: right;">0.64</td>
+<td style="text-align: right;">0.616</td>
+<td style="text-align: center;"></td>
+<td style="text-align: right;">21</td>
+<td style="text-align: right;">2.00</td>
+<td style="text-align: right;">0.999</td>
+</tr>
+<tr>
+<td style="text-align: left;">Cheverud–Nyholt</td>
+<td style="text-align: right;">379.9</td>
+<td style="text-align: right;">0.87</td>
+<td style="text-align: right;">0.455</td>
+<td style="text-align: center;"></td>
+<td style="text-align: right;">370.0</td>
+<td style="text-align: right;">3.31</td>
+<td style="text-align: right;">0.845</td>
+</tr>
+<tr>
+<td style="text-align: left;">Raw grid count <span
+class="math inline">\(K\)</span></td>
+<td style="text-align: right;">640</td>
+<td style="text-align: right;">0.91</td>
+<td style="text-align: right;">0.431</td>
+<td style="text-align: center;"></td>
+<td style="text-align: right;">640</td>
+<td style="text-align: right;">3.51</td>
+<td style="text-align: right;">0.748</td>
+</tr>
+<tr>
+<td style="text-align: left;">Survives (DSR <span
+class="math inline">\(&gt; 0.95\)</span>) for <span
+class="math inline">\(N_{\mathrm{eff}}&lt; N^{*}\)</span></td>
+<td colspan="3" style="text-align: center;">no <span
+class="math inline">\(N_{\mathrm{eff}}\)</span> (never survives)</td>
+<td style="text-align: center;"></td>
+<td colspan="3" style="text-align: center;"><span
+class="math inline">\(N^{*} = 144.8\)</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="sec:res-signal">The same search on a real edge: the
+effective-<span class="math inline">\(N\)</span> band</h2>
+<p>The right column of Table <a href="#tab:searches"
+data-reference-type="ref" data-reference="tab:searches">3</a> is the
+reason this paper exists. The regime-switching series contains genuine,
+exploitable trend persistence, and the search finds it: the winner <span
+class="math inline">\((3, 55)\)</span> has an in-sample selected maximum
+of 3.92 annualized — selection-inflated by construction, but resting on
+real skill — with a naive <span class="math inline">\(p\)</span>-value
+of <span class="math inline">\(6.1\times 10^{-12}\)</span> and an
+un-deflated PSR of 1.000. The bootstrap tests agree emphatically: with
+5000 resamples the Reality Check returns <span class="math inline">\(p =
+0.0024\)</span> and the SPA-type test <span class="math inline">\(p =
+0.0038\)</span> — interior <span
+class="math inline">\(p\)</span>-values, not the resolution floor of the
+bootstrap. The Harvey–Liu haircuts are mild: 0.148 under Bonferroni and
+Holm (one number, by the rank-one identity), 0.198 under BHY — the most
+conservative for a top pick, exactly as Section <a href="#sec:hl"
+data-reference-type="ref" data-reference="sec:hl">2.3</a> predicts —
+leaving certified annualized Sharpes of 3.33 and 3.14 (derived), with a
+Holm-adjusted <span class="math inline">\(p\)</span>-value of <span
+class="math inline">\(3.9\times 10^{-9}\)</span>. Real skill, correctly
+retained, even after paying full freight for 640 trials.</p>
+<p>DSR with the raw trial count reaches the opposite verdict. Fed <span
+class="math inline">\(N = 640\)</span>, Eq. (2) sets
+the deflated benchmark at an annualized 3.51 — demanding that the winner
+beat the expected best of 640 <em>independent</em> zero-skill trials —
+and Eq. (3) returns 0.748, below the 0.95
+threshold. A practitioner following the raw-<span
+class="math inline">\(N\)</span> recipe would discard a genuine edge
+worth an annualized Sharpe of nearly four. Two distinct mechanisms
+inflate that bar. The first is multiplicity: the grid’s 640 trials have
+mean pairwise correlation 0.62 — neighboring crossovers hold nearly the
+same positions — so 640 vastly overstates the number of independent
+chances luck was given. The second is subtler: the dispersion term of
+Eq. (2) treats the cross-trial spread of
+Sharpe estimates as luck, but in this search much of the spread is real
+— the per-observation trial-Sharpe dispersion <span
+class="math inline">\(\sqrt{\widehat{V}_{SR}}\)</span> is 0.079 here
+versus 0.014 on the noise search (derived) because genuinely skilled
+regions of the grid pull the distribution apart, and the formula reads
+that skill dispersion as more luck to deflate against.</p>
+<p>The effective-count band (Table <a href="#tab:neff"
+data-reference-type="ref" data-reference="tab:neff">4</a>, right half)
+is the honest repair, and it must be read whole. The five estimators
+again span two orders of magnitude (1.6 to 370.0). Four of the five
+retain the edge. At the bottom anchor (average correlation 1.6,
+evaluated at the <span class="math inline">\(N = 2\)</span> floor) the
+bar collapses to an annualized 0.25 and DSR returns 1.000 — but at that
+anchor the deflation is nearly inert, and the retention is simply the
+winner’s un-deflated PSR (1.000) shining through. The informative rows
+are the mid-range estimators: PCA-95 (<span
+class="math inline">\(N_{\mathrm{eff}}= 16\)</span>) and Kaiser (<span
+class="math inline">\(N_{\mathrm{eff}}= 21\)</span>) set genuinely
+deflating bars of an annualized 1.85 and 2.00 — comparable to the noise
+ceiling of Experiment 1 — and the edge still clears them decisively (DSR
+1.000 and 0.999). Only the near-independence Cheverud–Nyholt estimate
+(370.0, close to the raw count of 640) flips the verdict, rejecting at
+0.845. The survival crossing summarizes the whole curve: this winner is
+retained for every effective trial count below <span
+class="math inline">\(N^{*} = 144.8\)</span> — more than a fifth of the
+raw grid — and the noise winner of Section <a href="#sec:res-noise"
+data-reference-type="ref" data-reference="sec:res-noise">4.3</a> is
+retained at none. That pair of statements, robust across every
+defensible mid-range estimate, is what this experiment licenses; a
+single “corrected” DSR at one hand-picked <span
+class="math inline">\(N_{\mathrm{eff}}\)</span> is not.</p>
+<h1 id="sec:discussion">Discussion</h1>
+<h2
+id="deflation-restores-calibration-and-the-bar-is-the-noise-ceiling">Deflation
+restores calibration, and the bar is the noise ceiling</h2>
+<p>The headline result of Experiments 1–2 is that the machinery works
+exactly as advertised when its assumptions hold. The naive verdict on a
+searched winner is not slightly optimistic — it is always wrong under
+the null (false-discovery rate 1.000), with median apparent significance
+of 0.00069. Every principled correction restores the error rate to the
+neighborhood of the nominal <span class="math inline">\(\alpha =
+0.05\)</span> (0.001–0.057). And the deflated benchmark is not an
+abstract penalty: <span class="math inline">\(SR_0\)</span> reproduced
+the empirically realized noise ceiling to two decimals (1.63 annualized
+for a search of 1000 trials over 1000 observations). The practical form
+of this statement deserves emphasis in any research process: <em>a
+search has a Sharpe budget that luck will pay regardless of skill</em>,
+computable in closed form from the trial count, trial dispersion, and
+sample length, and no winner below that budget is evidence of anything.
+Power against real edges is then a question of where the edge sits
+relative to the ceiling (Table <a href="#tab:power"
+data-reference-type="ref" data-reference="tab:power">2</a>): negligible
+below it, near-perfect above it, with the 50%-power point just above the
+ceiling (about an annualized 1.73, derived) and false positives at 0.000
+throughout.</p>
+<h2 id="sec:disc-neff">Effective <span class="math inline">\(N\)</span>:
+report a band, and anchor it honestly</h2>
+<p>Experiment 4 documents the failure mode that we believe practitioners
+most need to know about, and Experiments 3–4 together show what can
+honestly be salvaged. It is tempting — it feels <em>conservative</em> —
+to feed DSR the raw size of the parameter grid. On a correlated search
+this over-deflates twice over: the raw count overstates the independent
+chances luck was given, and the dispersion term simultaneously reads
+real-skill spread as luck (0.079 versus 0.014 per observation across our
+two searches, derived). In our regime-edge search the resulting
+benchmark (annualized 3.51) exceeded what even a strong genuine edge
+could clear on three years of data, and DSR rejected a strategy whose
+reality is not in doubt — we planted it.</p>
+<p>The obvious repair — substitute an effective trial count —
+immediately runs into the fact that there is no such number, only
+estimators that disagree by two orders of magnitude on the same matrix
+(1.6 to 379.9 on noise, 1.6 to 370.0 on the edge). Worse, the band’s
+ends are individually treacherous. At the bottom, the
+average-correlation estimate (Eq. (9))
+lands below two on both searches, where the expected-maximum benchmark
+barely deflates at all: the bars are an annualized 0.25 and 0.31, and
+DSR effectively degenerates to the un-deflated PSR against zero. Both
+verdicts at that anchor are <em>inherited</em> — the edge is retained
+because its raw PSR is 1.000, and the noise winner is rejected because
+its raw PSR happens to be 0.918, short of 0.95. The latter is luck of
+the seed: this particular noise winner is modest (annualized 0.81). A
+luckier noise draw, strong enough to clear single-test significance —
+and Experiment 1 shows searched noise winners routinely reach an
+annualized 1.63 — would sail over a bar of 0.31 unchallenged. An
+effective count below two does not deflate; it abdicates. We also note
+the functional mismatch of Section <a href="#sec:neff"
+data-reference-type="ref" data-reference="sec:neff">2.5</a>: Eq. (9) is the variance-reduction factor
+for a <em>mean</em> of equicorrelated variables, imported into a formula
+about the <em>maximum</em>; nothing guarantees those two notions of
+“effectively independent” coincide. At the top, the Cheverud–Nyholt
+estimate — a published, widely used recipe, known to over-count under
+strong equicorrelation — lands at 370.0 and reproduces the raw-count
+error almost exactly (DSR 0.845 versus 0.748), rejecting the genuine
+edge. So the claim “any defensible dependence adjustment beats the raw
+count” is false, and we do not make it.</p>
+<p>What survives scrutiny is the band itself. The mid-range estimators —
+participation ratio, PCA-95, Kaiser, spanning roughly 2.4 to 22 — impose
+genuine deflation (bars up to an annualized 2.00 on the edge search) and
+deliver the correct verdict on both searches. The survival crossing
+<span class="math inline">\(N^{*}\)</span> compresses the whole curve
+into one auditable statement: the edge is retained for every <span
+class="math inline">\(N_{\mathrm{eff}}&lt; 144.8\)</span>, the noise
+winner for none. A discovery claim of the form “retained across the
+entire defensible range of effective counts, with a survival margin
+documented” is weaker than a single certified number, but it is the
+strongest statement this evidence actually supports — and unlike the
+point estimate, it does not silently hinge on which effective-count
+recipe the analyst happened to choose.</p>
+<h2 id="what-the-bootstrap-tests-know-that-dsr-does-not">What the
+bootstrap tests know that DSR does not</h2>
+<p>The Reality Check and the SPA-type test never faced any of this
+because they never needed a trial count: resampling the full return
+matrix jointly carries the entire cross-trial dependence structure into
+the null distribution automatically. Their separation on the two
+searches is stark — <span class="math inline">\(p = 0.570\)</span> and
+0.569 on noise versus <span class="math inline">\(p = 0.0024\)</span>
+and 0.0038 on the real edge, with 5000 resamples — and required no
+judgment calls. This robustness has a price and a scope. The price is
+data and computation: RC and SPA-type need the full <span
+class="math inline">\(T \times K\)</span> matrix of trial returns and
+thousands of bootstrap replications, whereas DSR needs only the list of
+trial Sharpe ratios — often the only thing archived from a historical
+search, and cheap at any scale. The scope difference is subtler: the two
+families answer different questions. DSR asks, “is the winner
+exceptional <em>relative to this search’s own luck distribution</em>?”
+RC and SPA-type ask, “after accounting for the full search, does the
+best rule beat the benchmark at all?” The first is a selection-adjusted
+quality bar on the champion; the second is an existence test for skill
+anywhere in the family. On our clean constructions they agree — on noise
+everything rejects at every effective count, and on the real edge the
+bootstrap tests, the Harvey–Liu haircuts, and DSR across its entire
+defensible mid-range all retain (Table <a href="#tab:searches"
+data-reference-type="ref" data-reference="tab:searches">3</a>, Table <a
+href="#tab:neff" data-reference-type="ref"
+data-reference="tab:neff">4</a>) — and their agreement across such
+different mechanisms is itself evidence; in messier settings they are
+complements, not substitutes.</p>
+<h2 id="a-practical-recipe">A practical recipe</h2>
+<p>Our results suggest a concrete checklist for anyone auditing a
+backtest search. Log every trial, not just the winner — every estimator
+here consumes the whole search, and the common practice of archiving
+only the champion destroys exactly the information deflation needs.
+Report the deflated benchmark <span class="math inline">\(SR_0\)</span>
+alongside the winner’s Sharpe, so readers see the noise ceiling the
+search itself created, and label the winner’s Sharpe as the in-sample
+selected maximum that it is. Do not report DSR at a single effective
+trial count: compute the spread of standard estimators and the survival
+crossing <span class="math inline">\(N^{*}\)</span>, and distrust both
+ends of the band — the smallest estimates barely deflate (the verdict is
+just un-deflated PSR), and the largest reproduce the raw-count
+over-deflation. A verdict that flips inside the defensible mid-range is
+not a discovery. When trial return series are available, run the Reality
+Check or its studentized SPA-type variant as an assumption-light
+cross-check. And treat the Harvey–Liu haircut as the communication
+layer: a statement like “after Holm adjustment across 640 trials the
+certified Sharpe drops by 0.148” is legible to any investment committee
+in a way that a bootstrap <span class="math inline">\(p\)</span>-value
+is not — remembering that for a single winner Holm <em>is</em>
+Bonferroni, and BHY is the most conservative of the three.</p>
+<h1 id="sec:limitations">Limitations</h1>
+<ul>
+<li><p><strong>Synthetic data, by design.</strong> Both data-generating
+processes — iid Gaussian returns and a two-state regime-switching drift
+— were chosen so that ground truth is known exactly, which is the point
+of a calibration study and also its boundary. Real returns have fat
+tails, volatility clustering, and structural breaks; our experiments say
+nothing about how large <span class="math inline">\(T\)</span> must be
+for Eq. (1)’s moment corrections to absorb such
+features, only that the selection-bias machinery works when its
+assumptions hold.</p></li>
+<li><p><strong>No consensus effective-<span
+class="math inline">\(N\)</span> estimator, and we do not supply
+one.</strong> The five estimators we report are standard recipes, not
+derivations matched to DSR’s extreme-value benchmark; the
+average-correlation form has the functional mismatch discussed in
+Section <a href="#sec:neff" data-reference-type="ref"
+data-reference="sec:neff">2.5</a> (a mean-variance quantity applied to a
+maximum), and Cheverud–Nyholt is known to over-count under strong
+equicorrelation. Bailey and López de Prado’s Appendix 3 clustering
+construction is the treatment we did not implement. Our claim is
+deliberately limited to the band: on these two searches the verdicts are
+stable across the defensible mid-range and summarized by <span
+class="math inline">\(N^{*}\)</span>, and the band’s ends are
+individually misleading in the ways documented in Section <a
+href="#sec:disc-neff" data-reference-type="ref"
+data-reference="sec:disc-neff">5.2</a>.</p></li>
+<li><p><strong>Power evidence is DSR-only and
+configuration-specific.</strong> Experiment 2 measures the power of DSR
+at one configuration (<span class="math inline">\(n_{\mathrm{true}} =
+25\)</span>, <span class="math inline">\(N = 1000\)</span>, <span
+class="math inline">\(T = 1000\)</span>) with no sensitivity sweep; the
+retention behavior of the Reality Check, the SPA-type test, and the
+haircuts is probed only through the single case study of
+Experiment 4.</p></li>
+<li><p><strong>RC/SPA described, not re-derived; SPA-type is not
+Hansen’s full test.</strong> As flagged in Section <a href="#sec:rcspa"
+data-reference-type="ref" data-reference="sec:rcspa">2.4</a>, we did not
+re-extract the equations of <span class="citation"
+data-cites="white2000reality">White (2000)</span>, <span
+class="citation" data-cites="hansen2005spa">Hansen (2005)</span>, or
+<span class="citation" data-cites="politisromano1994">Politis and Romano
+(1994)</span> from the primary texts; our description follows their
+standard characterization. Our implementation is a studentized Reality
+Check: it adopts Hansen’s studentization but retains White’s full
+recentering, and does not implement Hansen’s consistent
+(sample-dependent) recentering, so it is labeled SPA-type throughout and
+is, if anything, conservative relative to Hansen’s SPA.</p></li>
+<li><p><strong>Experiments 3–4 are case studies.</strong> The two
+searches are single seeded draws — deliberately, since they play the
+role of worked examples with known truth. The calibration and power
+claims rest on the Monte Carlo experiments (2000 and 1000 repetitions);
+the search experiments demonstrate existence of the raw-count failure
+and the shape of the effective-count band, not their frequency across
+seeds.</p></li>
+<li><p><strong>No cost model, no execution claims.</strong> The searches
+are frictionless and long–short unconstrained; wall-clock performance of
+the harness is likewise not a claim of this paper.</p></li>
+</ul>
+<h1 id="sec:conclusion">Conclusion</h1>
+<p>Under controlled conditions with known ground truth, the deflation
+toolkit does what it promises. The naive single-test verdict on a
+searched winner is worthless — wrong with certainty under the null —
+while the Deflated Sharpe Ratio, the Harvey–Liu haircuts, and the
+Reality Check all restore error control to the neighborhood of the
+nominal level, and the deflated benchmark equals the noise ceiling of
+the search to two decimals. Power is a function of where an edge sits
+relative to that ceiling, so deflation converts an unanswerable question
+(“is this backtest good?”) into a computable one (“does this edge clear
+what luck alone would have bought?”).</p>
+<p>The toolkit’s one sharp edge is the trial count inside DSR. On a
+realistic correlated grid, the raw count rejected a genuine edge that
+every other estimator certified — and the seemingly obvious repair, an
+effective number of trials, is not a number but a contested range
+spanning two orders of magnitude, whose smallest values barely deflate
+at all and whose largest reproduce the raw-count error. What the
+evidence does support is a robustness band: on these searches the
+genuine edge survives every effective count below 144.8, including
+mid-range bars that deflate as hard as the noise ceiling itself, while
+the noise winner survives none. The bootstrap tests sidestep the issue
+entirely by construction, at the cost of requiring the full trial return
+matrix. Used together — DSR reported as a band with its survival
+crossing, RC and the SPA-type test for the search, a haircut for the
+committee — the estimators delivered a coherent verdict on every
+question our experiments could pose, and their agreement across such
+different mechanisms is the most reassuring calibration result of
+all.</p>
+<h4 id="reproducibility.">Reproducibility.</h4>
+<p>All code, tests, and outputs accompany this paper:
+<code>scripts/run_all.py</code> regenerates
+<code>results/results.json</code> from fixed seeds (Python 3.14.6, NumPy
+2.4.3); <code>scripts/check_paper_numbers.py</code> verifies every
+numeric claim in this manuscript against that file and fails on any
+mismatch; <code>tests/</code> contains deterministic invariant tests for
+every estimator used.</p>
+<div id="refs" class="references csl-bib-body hanging-indent"
+role="list">
+<div id="ref-bailey2014pseudo" class="csl-entry" role="listitem">
+Bailey, David H., Jonathan M. Borwein, Marcos López de Prado, and Qiji
+Jim Zhu. 2014. <span>“Pseudo-Mathematics and Financial Charlatanism: The
+Effects of Backtest Overfitting on Out-of-Sample Performance.”</span>
+<em>Notices of the American Mathematical Society</em> 61 (5): 458–71. <a
+href="https://doi.org/10.1090/noti1105">https://doi.org/10.1090/noti1105</a>.
+</div>
+<div id="ref-baileyetal2017pbo" class="csl-entry" role="listitem">
+Bailey, David H., Jonathan M. Borwein, Marcos López de Prado, and Qiji
+Jim Zhu. 2017. <span>“The Probability of Backtest Overfitting.”</span>
+<em>Journal of Computational Finance</em> 20 (4): 39–69. <a
+href="https://doi.org/10.21314/JCF.2016.322">https://doi.org/10.21314/JCF.2016.322</a>.
+</div>
+<div id="ref-baileylopezdeprado2012psr" class="csl-entry"
+role="listitem">
+Bailey, David H., and Marcos López de Prado. 2012. <span>“The Sharpe
+Ratio Efficient Frontier.”</span> <em>Journal of Risk</em> 15 (2): 3–44.
+<a
+href="https://doi.org/10.21314/JOR.2012.255">https://doi.org/10.21314/JOR.2012.255</a>.
+</div>
+<div id="ref-baileylopezdeprado2014dsr" class="csl-entry"
+role="listitem">
+Bailey, David H., and Marcos López de Prado. 2014. <span>“The Deflated
+Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and
+Non-Normality.”</span> <em>Journal of Portfolio Management</em> 40 (5):
+94–107. <a
+href="https://doi.org/10.3905/jpm.2014.40.5.094">https://doi.org/10.3905/jpm.2014.40.5.094</a>.
+</div>
+<div id="ref-benjaminihochberg1995" class="csl-entry" role="listitem">
+Benjamini, Yoav, and Yosef Hochberg. 1995. <span>“Controlling the False
+Discovery Rate: A Practical and Powerful Approach to Multiple
+Testing.”</span> <em>Journal of the Royal Statistical Society, Series B
+(Methodological)</em> 57 (1): 289–300. <a
+href="https://doi.org/10.1111/j.2517-6161.1995.tb02031.x">https://doi.org/10.1111/j.2517-6161.1995.tb02031.x</a>.
+</div>
+<div id="ref-benjaminiyekutieli2001" class="csl-entry" role="listitem">
+Benjamini, Yoav, and Daniel Yekutieli. 2001. <span>“The Control of the
+False Discovery Rate in Multiple Testing Under Dependency.”</span>
+<em>Annals of Statistics</em> 29 (4): 1165–88. <a
+href="https://doi.org/10.1214/aos/1013699998">https://doi.org/10.1214/aos/1013699998</a>.
+</div>
+<div id="ref-hansen2005spa" class="csl-entry" role="listitem">
+Hansen, Peter Reinhard. 2005. <span>“A Test for Superior Predictive
+Ability.”</span> <em>Journal of Business &amp; Economic Statistics</em>
+23 (4): 365–80. <a
+href="https://doi.org/10.1198/073500105000000063">https://doi.org/10.1198/073500105000000063</a>.
+</div>
+<div id="ref-harveyliu2014evaluating" class="csl-entry" role="listitem">
+Harvey, Campbell R., and Yan Liu. 2014. <span>“Evaluating Trading
+Strategies.”</span> <em>Journal of Portfolio Management</em> 40 (5):
+108–18. <a
+href="https://doi.org/10.3905/jpm.2014.40.5.108">https://doi.org/10.3905/jpm.2014.40.5.108</a>.
+</div>
+<div id="ref-harveyliu2015backtesting" class="csl-entry"
+role="listitem">
+Harvey, Campbell R., and Yan Liu. 2015. <span>“Backtesting.”</span>
+<em>Journal of Portfolio Management</em> 42 (1): 13–28. <a
+href="https://doi.org/10.3905/jpm.2015.42.1.013">https://doi.org/10.3905/jpm.2015.42.1.013</a>.
+</div>
+<div id="ref-harveyliuzhu2016" class="csl-entry" role="listitem">
+Harvey, Campbell R., Yan Liu, and Heqing Zhu. 2016<span>“...and the
+Cross-Section of Expected Returns.”</span> <em>Review of Financial
+Studies</em> 29 (1): 5–68. <a
+href="https://doi.org/10.1093/rfs/hhv059">https://doi.org/10.1093/rfs/hhv059</a>.
+</div>
+<div id="ref-holm1979" class="csl-entry" role="listitem">
+Holm, Sture. 1979. <span>“A Simple Sequentially Rejective Multiple Test
+Procedure.”</span> <em>Scandinavian Journal of Statistics</em> 6 (2):
+65–70.
+</div>
+<div id="ref-lopezdeprado2018advances" class="csl-entry"
+role="listitem">
+López de Prado, Marcos. 2018. <em>Advances in Financial Machine
+Learning</em>. John Wiley &amp; Sons.
+</div>
+<div id="ref-politisromano1994" class="csl-entry" role="listitem">
+Politis, Dimitris N., and Joseph P. Romano. 1994. <span>“The Stationary
+Bootstrap.”</span> <em>Journal of the American Statistical
+Association</em> 89 (428): 1303–13. <a
+href="https://doi.org/10.1080/01621459.1994.10476870">https://doi.org/10.1080/01621459.1994.10476870</a>.
+</div>
+<div id="ref-white2000reality" class="csl-entry" role="listitem">
+White, Halbert. 2000. <span>“A Reality Check for Data Snooping.”</span>
+<em>Econometrica</em> 68 (5): 1097–126. <a
+href="https://doi.org/10.1111/1468-0262.00152">https://doi.org/10.1111/1468-0262.00152</a>.
+</div>
+</div>

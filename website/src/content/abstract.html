@@ -1,0 +1,37 @@
+<p>A parameter search over a backtest grid is a multiple-testing
+machine: the best of many zero-skill configurations reliably produces an
+impressive Sharpe ratio. We run four seeded, fully reproducible
+experiments with known ground truth to measure how well the standard
+corrections repair this. Under a global null (selecting the best of 1000
+independent zero-skill strategies), the naive single-test verdict
+certifies a discovery in every repetition (false-discovery rate 1.000)
+at an average best annualized Sharpe of 1.63, while the Deflated Sharpe
+Ratio (DSR), the Harvey–Liu haircuts, and White’s Reality Check bring
+the false-discovery rate to 0.001–0.057, at or near the nominal <span
+class="math inline">\(\alpha = 0.05\)</span>. The deflated benchmark
+<span class="math inline">\(SR_0\)</span> averages 1.63 annualized —
+exactly the noise ceiling: the bar a strategy must clear is not zero but
+the best Sharpe that luck alone buys for the given search size and
+sample length. A planted-signal sweep shows DSR power rising from 0.005
+to 1.000, with the 50%-power point just above that ceiling (about 1.73
+annualized). Two realistic moving-average searches (640 correlated
+trials each, bootstrap tests on 5000 resamples) then probe the
+correlated-search regime. On pure noise every estimator rejects the
+seductive winner (annualized Sharpe 0.81). On a genuine regime-switching
+edge, whose in-sample <em>selected</em> maximum is an annualized Sharpe
+of 3.92, the Reality Check (<span class="math inline">\(p =
+0.0024\)</span>), the studentized SPA-type test (<span
+class="math inline">\(p = 0.0038\)</span>), and the Harvey–Liu haircuts
+(0.148–0.198) all certify the edge — but DSR fed the <em>raw</em> trial
+count wrongly rejects it (<span class="math inline">\(0.748 &lt;
+0.95\)</span>). The natural fix, an effective number of trials, turns
+out not to be a single number: five standard estimators computed on the
+same trial matrix disagree by two orders of magnitude (1.6 to 370.0),
+and at the smallest estimates the deflation is nearly inert — there the
+correct verdicts are inherited from the winners’ un-deflated
+significance, not produced by deflation. The honest deliverable is a
+robustness band: the real edge is retained for every effective count
+below 144.8 (four of the five estimators, including genuinely deflating
+mid-range bars of annualized 1.85–2.00), while the noise winner is
+rejected at every effective count. Bootstrap-based tests sidestep the
+choice entirely by resampling the whole search jointly.</p>
